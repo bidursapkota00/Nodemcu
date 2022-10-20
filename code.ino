@@ -1,5 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266Ping.h>
+#include <ESP8266HTTPClient.h>
 #include <FirebaseESP8266.h>
 #include <addons/RTDBHelper.h>
 //#include <ArduinoJson.h>
@@ -10,9 +11,9 @@
 #define SENSOR  14
 #define RST  10
 #define VALVE  13
-#define host "aalu-pidalu-default-rtdb.firebaseio.com"
-//#define api_key "7468798439c614bcc4ea45fe98c5b05815c04b42"
-#define api_key "62pyh8BmfqlXYRTCBopoxtGkFxxYUqHGcTtGbSJk"
+
+#define SERVER_IP "http://water-flow-meter.herokuapp.com/api/addlitre"
+
 FirebaseData fbdo;
 
 SH1106Wire display(0x3c, SDA, SCL);
@@ -24,7 +25,6 @@ const byte DEVADDR = 0x50;
 
 String _SSID = "B2r";
 String _pass = "aaaaaaaa";
-String id = "/483fdaa43f4f";
 String state_Received;
 
 boolean rstVar = false;
@@ -81,6 +81,13 @@ void displayTestWifi(void){
     Serial.println("No Connection");
     displaychar("No Wifi", 40,50,1);
   }
+}
+
+String mac_address(){
+  String temp = String(WiFi.macAddress());
+  byte len = temp.length();
+  temp.replace(":", "");
+  return temp;
 }
 
 bool testWifi(int x = 0){
@@ -186,147 +193,6 @@ String readData(byte i) {
     return x;
 }
 
-/*bool strCmp(String x, String y){
-  byte xLen = x.length();
-  byte yLen = y.length();
-  if (xLen != 0 and yLen != 0){
-    if (xLen != yLen){
-      //Serial.println("Returned coz of different length");
-      return 0;
-    }
-    else{
-      for (byte i = 0; i < xLen; i++){
-        if ((char)x[i] != (char)y[i]){
-          //Serial.print("Returned coz of different character from index: ");
-          //Serial.println(i);
-          //Serial.println((char)x[i]);
-          //Serial.println((char)y[i]);
-          return 0;
-        }
-      }
-      return 1;
-    }
-  }
-  else{
-    //Serial.println("Returned coz of 0 length");
-    return 0;
-  }
-  return 1;
-}
-
-void streamTimeoutCallback(bool timeout){
-  if(timeout){
-    Serial.println("Stream timeout, resume streaming...");
-  }  
-}
-
-void begin_stream() {
-  if (!Firebase.beginStream(fbdo, id + "/access")) {
-    Serial.println(fbdo.errorReason());
-  }
-  else  {
-    Serial.print("Successful: ");
-    Serial.println(id + "/access");
-    initialBeginVar = 0;
-  }
-  Firebase.reconnectWiFi(true);
-  delay(100);
-  Firebase.setReadTimeout(fbdo, 1000 * 5);
-  Firebase.setwriteSizeLimit(fbdo, "tiny");
-  Firebase.setStreamCallback(fbdo, streamCallback, streamTimeoutCallback);
-  if (!Firebase.beginStream(fbdo, id+"/access"))
-  {
-    Serial.println(fbdo.errorReason());
-  }
-  else{
-    Serial.println("Successful begin stream "+id+"/access");
-    initialBeginVar = 0;
-  }
-}
-
-
-void streamCallback(StreamData data){
-  Serial.println("Stream Data...");
-  //FirebaseJson *json = data.to<FirebaseJson *>();
-  Serial.println(json->raw());
-  if (data.dataTypeEnum() == fb_esp_rtdb_data_type_string){
-    state_Received = data.to<String>();
-    Serial.println(state_Received);
-    get_Stream();
-  }
-}
-
-void get_Stream(){
-  if (strCmp(state_Received, "EMPTY_STATE")){
-    Serial.println("Acknowledge complete");
-  }
-  
-  else if (strCmp(state_Received, "TAP_OFF")){
-    valv = false;
-    digitalWrite(VALVE, LOW);
-    FirebaseData fset;
-    FirebaseJson updateData;
-    updateData.set("tap_state", 0);
-    updateData.set("access", "EMPTY_STATE");
-    updateData.set("device_state_changed_at/.sv", "timestamp");
-    updateData.set("last_updated/.sv", "timestamp");
-    
-    if (Firebase.RTDB.updateNode(&fset, id, &updateData)) {
-      Serial.println("Firebase Acknowledged successfully");
-      Serial.println(fset.jsonString());
-    } 
-    else {
-      Serial.println(fset.errorReason());
-    }
-    Serial.println("Tap Off");
-  }
-   
-  else if (strCmp(state_Received, "WIFI_CHANGE_STATE")){
-    touchVar = false;
-    set_String();
-    FirebaseData fbdo;
-    String received = "";
-    Serial.println("Credential Change From Firebase");
-    if (Firebase.getJSON(fbdo, id+"/credentials")){
-      received = fbdo.jsonString();
-      Serial.println(received);
-      DynamicJsonBuffer JSONBuffer;
-      JsonObject& parsed= JSONBuffer.parseObject(received);
-      const String wifi_ssid = parsed["wifi_ssid"];
-      const String wifi_pass = parsed["wifi_pass"];
-      Serial.println(wifi_ssid);
-      Serial.println(wifi_pass);
-      if (!strCmp(wifi_ssid, readData(r[0])) || !strCmp(wifi_pass, readData(r[1]))){
-        eeprom_write_page(DEVADDR, w[0], dataS(wifi_ssid), 32);
-        eeprom_write_page(DEVADDR, w[1], dataS(wifi_pass), 32);
-        hotVar = true;
-        WiFi.disconnect();
-        WiFi.mode(WIFI_OFF);
-        delay(100);
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
-        byte c = 0;
-        while (WiFi.status() != WL_CONNECTED) {
-          Serial.print(".");
-          delay(200);
-          c++;
-          if (c > 35){
-            break;
-          }
-        }
-      }
-      else{
-        Serial.print("Same Credentials Given");
-      }
-      current_time = millis();
-    }
-    else{
-      Serial.println(fbdo.errorReason());
-    }
-    touchVar = true;
-  }
-}*/
-
 void setup(){
   Serial.begin(115200);
   Wire.begin();
@@ -356,9 +222,6 @@ void setup(){
   WiFi.persistent(true);
   Serial.println("SSID: "+ssid+"Pass: "+password);
 
-  Firebase.begin(host, api_key);
-  Firebase.reconnectWiFi(true);
-  
   Serial.print("Output Liquid Quantity: ");
   Serial.print(totalMilliLitres);
   Serial.print("mL / ");
@@ -376,6 +239,10 @@ void setup(){
 }
 
 void loop() {
+  if (initialBeginVar && testWifi()){
+    initialBeginVar = 0;
+    //begin_stream();
+  }
   if (rstVar){
     eeprom_write_page(DEVADDR, w[0], dataS(_SSID), 32);
     eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
@@ -392,20 +259,30 @@ void loop() {
 ////////////////////////////////////////////////////////////////////////////////////////
 
   currentMillis2 = millis();
-  if (currentMillis2 - previousMillis2 > interval2){
+  if (currentMillis2 - previousMillis2 > interval2 && testWifi()){
     Serial.println("10 minute");
-    if (testWifi()){
-      if (initialBeginVar){
-          initialBeginVar = 0;
-          //begin_stream();
-      }
-    }
     String data_Litre = readData(r[2]);
-    FirebaseData fset;
-    FirebaseJson json;
-    json.set("last_updated/.sv","timestamp");
-    json.set("litre_consumed",data_Litre);
-    Serial.printf("Push json... %s\n", Firebase.RTDB.pushJSON(&fset, id+"/data", &json) ? "ok" : fset.errorReason().c_str());
+    String deviceId = mac_address();
+    WiFiClient client;
+    HTTPClient http;
+    Serial.print("[HTTP] begin...\n");
+    http.begin(client, SERVER_IP); //HTTP
+    http.addHeader("Content-Type", "application/json");
+    Serial.print("[HTTP] POST...\n");
+    int httpCode = http.POST("{\"deviceId\":\"" + deviceId + "\",\"litre\":\"" + data_Litre + "\"}");
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+      if (httpCode == HTTP_CODE_OK) {
+        const String& payload = http.getString();
+        Serial.println("received payload:\n<<");
+        Serial.println(payload);
+        Serial.println(">>");
+      }
+    } else {
+      Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+    http.end();
     previousMillis2 = millis();
   }
 
