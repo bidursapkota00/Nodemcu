@@ -97,29 +97,10 @@ String mac_address(){
   return temp;
 }
 
-bool testWifi(int x = 0){
-  IPAddress ip(1,1,1,1);
-  if (WiFi.status() == WL_CONNECTED) {
-    if ( Ping.ping(ip, 1)) {
-      if (x){
-        Serial.println("Internet Access");
-      }
-      return true;
-    }
-    else {
-      if (x){
-        Serial.println("No Internet");
-      }
-      return false;
-    }
-  }
-  else
-  {
-    if (x){
-      Serial.println("No Connection");
-    }
-    return false;
-  }
+bool testWifi(){
+  if (WiFi.status() == WL_CONNECTED)
+    return true;    
+  return false;
 }
 
 String dataS(String x){
@@ -210,19 +191,23 @@ void setCredentials(){
   eeprom_write_page(DEVADDR, w[1], dataS(pass), 32);
 }
 
-void printStreamResult(FirebaseData &data)
+void handleStreamResult(FirebaseData &data)
 {
-  if (data.dataType() == "int")
-    Serial.println(data.intData());
-  else if (data.dataType() == "float")
-    Serial.println(data.floatData(), 5);
-  else if (data.dataType() == "double")
-    printf("%.9lf\n", data.doubleData());
-  else if (data.dataType() == "boolean")
-    Serial.println(data.boolData() == 1 ? "true" : "false");
-  else if (data.dataType() == "string")
-    Serial.println(data.stringData());
-    
+  String stream;
+  if (data.dataType() == "string") {
+    stream = data.stringData();
+    Serial.println(stream);
+  }
+  if(stream == "VALVE_OFF") digitalWrite(VALVE, LOW);
+  else if(stream == "PAYMENT_SUCCESS"){
+    digitalWrite(VALVE, HIGH);
+    eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
+    clearLitre();
+    String data_Litre = readData(r[2]);
+    displaychar("V: "+data_Litre+" L", 0,10,2);
+    displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
+    displayTestWifi();
+  }  
 }
 
 void firebaseBeginStream() {
@@ -279,7 +264,7 @@ void setup(){
   Serial.print(totalLitres);
   Serial.println("L");
 
-  delay(2000); // Pause for 2 seconds
+  delay(7000); // Pause for 2 seconds
 
   display.clear();
   displaychar("Smart Water Meter", 20,0,1);
@@ -314,7 +299,7 @@ void loop() {
       Serial.println("DATA TYPE: " + firebaseData.dataType());
       Serial.println("EVENT TYPE: " + firebaseData.eventType());
       Serial.print("VALUE: ");
-      printStreamResult(firebaseData);
+      handleStreamResult(firebaseData);
     }
   }
   if (rstVar){
