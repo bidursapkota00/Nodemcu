@@ -17,8 +17,13 @@ ESP8266WebServer server(80);
 #define VALVE  13
 
 #define SERVER_IP "http://water-flow-meter.herokuapp.com/api/addlitre"
+#define FIREBASE_HOST "smart-water-meter-v1-default-rtdb.firebaseio.com" //Without http:// or https:// schemes
+#define FIREBASE_SECRET "62pyh8BmfqlXYRTCBopoxtGkFxxYUqHGcTtGbSJk"
 
 SH1106Wire display(0x3c, SDA, SCL);
+
+//Define FirebaseESP8266 data object
+FirebaseData firebaseData;
 
 int r[7] = {16,48,80,112,144,176,208}; //(ssid,pass,data_litre,state_valve,}
 unsigned w[7] = {0x010,0x030,0x050,0x070,0x090,0x0B0,0x0D0};
@@ -30,8 +35,7 @@ String _SSID = "B2r";
 String _pass = "aaaaaaaa";
 
 boolean rstVar = false;
-boolean creVar = false;
-boolean serverRunning = false;
+//boolean creVar = false;
 boolean valv = false;
 
 int initialBeginVar = 1;
@@ -41,7 +45,6 @@ long previousMillis = 0;
 int interval2 = 10*60*1000;
 long currentMillis2 = 0;
 long previousMillis2 = millis() - interval2 + 60000;
-long serverStartingTime = 0;
 float calibrationFactor = 8.50;
 volatile byte pulseCount = 0;
 byte pulse1Sec = 0;
@@ -205,16 +208,36 @@ void setCredentials(){
   server.send(204,"");
   eeprom_write_page(DEVADDR, w[0], dataS(access_point), 32);
   eeprom_write_page(DEVADDR, w[1], dataS(pass), 32);
-  String ssid = readData(r[0]), password = readData(r[1]);
-  Serial.println("SSID: "+ssid+"Pass: "+password);
-  WiFi.begin(ssid, password);
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(true);
-  serverRunning = false;
-  rstVar = false;
+}
+
+void printStreamResult(FirebaseData &data)
+{
+  if (data.dataType() == "int")
+    Serial.println(data.intData());
+  else if (data.dataType() == "float")
+    Serial.println(data.floatData(), 5);
+  else if (data.dataType() == "double")
+    printf("%.9lf\n", data.doubleData());
+  else if (data.dataType() == "boolean")
+    Serial.println(data.boolData() == 1 ? "true" : "false");
+  else if (data.dataType() == "string")
+    Serial.println(data.stringData());
+    
+}
+
+void firebaseBeginStream() {
+  String path = "/devices/" + mac_address() + "/stream";
+  if (!Firebase.beginStream(firebaseData, path))
+  {
+    Serial.println("Can't begin stream connection...");
+    Serial.println("REASON: " + firebaseData.errorReason());
+  } else {
+    initialBeginVar=0;
+  }
 }
 
 void setup(){
+  delay(3000);
   Serial.begin(115200);
   Wire.begin();
   
@@ -238,10 +261,17 @@ void setup(){
   IPAddress myIP = WiFi.softAPIP();        //IP Address of our Esp8266 accesspoint(where we can host webpages, and see data)
   Serial.print("Access Point IP address: ");
   Serial.println(myIP);
+  server.on("/credentials",setCredentials);
+  server.begin();
+  Serial.println("Listening in ip 192.168.4.1!");
+
   WiFi.begin(ssid, password);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   Serial.println("SSID: "+ssid+"Pass: "+password);
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_SECRET);
+  Firebase.reconnectWiFi(true);
 
   Serial.print("Output Liquid Quantity: ");
   Serial.print(totalMilliLitres);
@@ -260,110 +290,120 @@ void setup(){
 }
 
 void loop() {
-  if (rstVar) {
-    if(!serverRunning && millis() - serverStartingTime < 5 * 60 * 1000) {
-      serverStartingTime = millis();
-      Serial.println("Reset clicked!");
-      server.on("/credentials",setCredentials);
-      server.begin();
-      Serial.println("Listening in ip 192.168.4.1! for 5 minutes");
-      serverRunning = true;
+  server.handleClient();
+  if (initialBeginVar && testWifi()){
+    firebaseBeginStream();    
+  }
+  if(!initialBeginVar) {
+    if (!Firebase.readStream(firebaseData))
+    {
+      Serial.println("Can't read stream data...");
+      Serial.println("REASON: " + firebaseData.errorReason());
     }
-    server.handleClient();
-    delay(300);
-  } else {
-    if (initialBeginVar && testWifi()){
-      initialBeginVar = 0;
-      //begin_stream();
+
+    if (firebaseData.streamTimeout())
+    {
+      Serial.println("Stream timeout, resume streaming...");
     }
-    if (creVar){
-      eeprom_write_page(DEVADDR, w[0], dataS(_SSID), 32);
-      eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
-      eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
+
+    if (firebaseData.streamAvailable())
+    {
+      Serial.println("Stream Data available... Printing");
+      Serial.println("STREAM PATH: " + firebaseData.streamPath());
+      Serial.println("EVENT PATH: " + firebaseData.dataPath());
+      Serial.println("DATA TYPE: " + firebaseData.dataType());
+      Serial.println("EVENT TYPE: " + firebaseData.eventType());
+      Serial.print("VALUE: ");
+      printStreamResult(firebaseData);
+    }
+  }
+  if (rstVar){
+    eeprom_write_page(DEVADDR, w[0], dataS(_SSID), 32);
+    eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
+    eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
+    clearLitre();
+    //displaychar("Smart Water Meter", 20,0,1);
+    String data_Litre = readData(r[2]);
+    displaychar("V: "+data_Litre+" L", 0,10,2);
+    displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
+    displayTestWifi();
+    rstVar = false;
+  }
+
+  
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+  currentMillis2 = millis();
+  if (currentMillis2 - previousMillis2 > interval2 && testWifi()){
+    Serial.println("10 minute");
+    String data_Litre = readData(r[2]);
+    String deviceId = mac_address();
+    WiFiClient client;
+    HTTPClient http;
+    Serial.print("[HTTP] begin...\n");
+    http.begin(client, SERVER_IP); //HTTP
+    http.addHeader("Content-Type", "application/json");
+    Serial.print("[HTTP] POST...\n");
+    int httpCode = http.POST("{\"deviceId\":\"" + deviceId + "\",\"litre\":\"" + data_Litre + "\"}");
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+      if (httpCode == HTTP_CODE_OK) {
+        const String& payload = http.getString();
+        Serial.println("received payload:\n<<");
+        Serial.println(payload);
+        Serial.println(">>");
+      }
+    } else {
+      Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+    http.end();
+    previousMillis2 = millis();
+  }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+  currentMillis = millis();
+  if (currentMillis - previousMillis > interval){
+    pulse1Sec = pulseCount;
+    pulseCount = 0;
+  
+    flowRate = ((1000.0 / (millis() - previousMillis)) * pulse1Sec) ;
+    if (flowRate < calibrationFactor * 0.6){
+      flowRate = flowRate / (calibrationFactor * .55);
+    }
+    else if (flowRate < calibrationFactor){
+      flowRate = flowRate / (calibrationFactor * .65);
+    }
+    else if (flowRate < calibrationFactor * 2.2){
+      flowRate = flowRate / (calibrationFactor * .80);
+    }
+    else{
+      flowRate = flowRate / calibrationFactor;
+    }
+    previousMillis = millis();
+  
+    if(flowRate != 0.00){
+      flowLitres = (flowRate / 60);
+    
+      totalLitres = readData(r[2]).toFloat()+flowLitres;
+      eeprom_write_page(DEVADDR, w[2], dataS(String(totalLitres)),32);
+      
+      Serial.print("Flow rate: ");
+      Serial.print(float(flowRate));  // Print the integer part of the variable
+      Serial.print("L/min");
+      Serial.print("\t");       // Print tab space
+
+      Serial.print(totalLitres);
+      Serial.println("L");
+
       clearLitre();
-      //displaychar("Smart Water Meter", 20,0,1);
+
       String data_Litre = readData(r[2]);
       displaychar("V: "+data_Litre+" L", 0,10,2);
       displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
       displayTestWifi();
-      rstVar = false;
-    }
-  
-    
-  
-  ////////////////////////////////////////////////////////////////////////////////////////
-  
-    currentMillis2 = millis();
-    if (currentMillis2 - previousMillis2 > interval2 && testWifi()){
-      Serial.println("10 minute");
-      String data_Litre = readData(r[2]);
-      String deviceId = mac_address();
-      WiFiClient client;
-      HTTPClient http;
-      Serial.print("[HTTP] begin...\n");
-      http.begin(client, SERVER_IP); //HTTP
-      http.addHeader("Content-Type", "application/json");
-      Serial.print("[HTTP] POST...\n");
-      int httpCode = http.POST("{\"deviceId\":\"" + deviceId + "\",\"litre\":\"" + data_Litre + "\"}");
-      // httpCode will be negative on error
-      if (httpCode > 0) {
-        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-        if (httpCode == HTTP_CODE_OK) {
-          const String& payload = http.getString();
-          Serial.println("received payload:\n<<");
-          Serial.println(payload);
-          Serial.println(">>");
-        }
-      } else {
-        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
-      }
-      http.end();
-      previousMillis2 = millis();
-    }
-  
-  //////////////////////////////////////////////////////////////////////////////////////////
-  
-    currentMillis = millis();
-    if (currentMillis - previousMillis > interval){
-      pulse1Sec = pulseCount;
-      pulseCount = 0;
-   
-      flowRate = ((1000.0 / (millis() - previousMillis)) * pulse1Sec) ;
-      if (flowRate < calibrationFactor * 0.6){
-        flowRate = flowRate / (calibrationFactor * .55);
-      }
-      else if (flowRate < calibrationFactor){
-        flowRate = flowRate / (calibrationFactor * .65);
-      }
-      else if (flowRate < calibrationFactor * 2.2){
-        flowRate = flowRate / (calibrationFactor * .80);
-      }
-      else{
-        flowRate = flowRate / calibrationFactor;
-      }
-      previousMillis = millis();
-   
-      if(flowRate != 0.00){
-        flowLitres = (flowRate / 60);
-     
-        totalLitres = readData(r[2]).toFloat()+flowLitres;
-        eeprom_write_page(DEVADDR, w[2], dataS(String(totalLitres)),32);
-       
-        Serial.print("Flow rate: ");
-        Serial.print(float(flowRate));  // Print the integer part of the variable
-        Serial.print("L/min");
-        Serial.print("\t");       // Print tab space
-  
-        Serial.print(totalLitres);
-        Serial.println("L");
-  
-        clearLitre();
-  
-        String data_Litre = readData(r[2]);
-        displaychar("V: "+data_Litre+" L", 0,10,2);
-        displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
-        displayTestWifi();
-      }
     }
   }
 }
