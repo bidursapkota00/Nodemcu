@@ -13,11 +13,12 @@
 ESP8266WebServer server(80);
 
 #define SENSOR  14
-#define RST  10
-#define CRE  9
+#define RST  9
+#define CRE  10
 #define VALVE  13
 
-#define SERVER_IP "http://smart-water-meter-system.vercel.app/api/addlitre"
+#define POST_LITRE_URL "http://smart-water-meter-system.vercel.app/api/addlitre"
+#define POST_STREAM_NOTHING_URL "http://smart-water-meter-system.vercel.app/api/stream/nothing"
 #define FIREBASE_HOST "smart-water-meter-v1-default-rtdb.firebaseio.com" //Without http:// or https:// schemes
 #define FIREBASE_SECRET "62pyh8BmfqlXYRTCBopoxtGkFxxYUqHGcTtGbSJk"
 
@@ -32,8 +33,8 @@ const byte DEVADDR = 0x50;
 
 const char* hotspot_ssid = "Smart Water Meter";
 const char* hotspot_password = "Water@123";
-String _SSID = "B2r";
-String _pass = "aaaaaaaa";
+String _SSID = "Wireless Fidelity@ClassicTech";
+String _pass = "1Qazxsw2#edc";
 
 boolean rstVar = false;
 boolean creVar = false;
@@ -192,19 +193,46 @@ void setCredentials(){
   JsonObject& jObject = jBuffer.parseObject(data);
   String access_point = jObject["ssid"];
   String pass = jObject["pass"];
-  server.send(204,"");
   eeprom_write_page(DEVADDR, w[0], dataS(access_point), 32);
   eeprom_write_page(DEVADDR, w[1], dataS(pass), 32);
+  server.send(200,"Credential Changed");
+}
+
+void postData(String apiurl, String jsondata) {
+  WiFiClient client;
+  HTTPClient http;
+  Serial.print("[HTTP] begin...\n");
+  http.begin(client, apiurl); //HTTP
+  http.addHeader("Content-Type", "application/json");
+  Serial.print("[HTTP] POST...\n");
+  int httpCode = http.POST(jsondata);
+  // httpCode will be negative on error
+  if (httpCode > 0) {
+    Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+    if (httpCode == HTTP_CODE_OK) {
+      const String& payload = http.getString();
+      Serial.println("received payload:\n<<");
+      Serial.println(payload);
+      Serial.println(">>");
+    }
+  } else {
+    Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  http.end();
 }
 
 void handleStreamResult(FirebaseData &data)
 {
   String stream;
+  String deviceId = mac_address();
   if (data.dataType() == "string") {
     stream = data.stringData();
     Serial.println(stream);
   }
-  if(stream == "VALVE_OFF") digitalWrite(VALVE, LOW);
+  if(stream == "VALVE_OFF") {
+    postData(POST_STREAM_NOTHING_URL, "{\"deviceId\":\"" + deviceId + "\"}");
+    digitalWrite(VALVE, LOW);
+  }
   else if(stream == "PAYMENT_SUCCESS"){
     digitalWrite(VALVE, HIGH);
     eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
@@ -213,6 +241,7 @@ void handleStreamResult(FirebaseData &data)
     displaychar("V: "+data_Litre+" L", 0,10,2);
     displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
     displayTestWifi();
+    postData(POST_STREAM_NOTHING_URL, "{\"deviceId\":\"" + deviceId + "\"}");
   }  
 }
 
@@ -252,8 +281,6 @@ void setup(){
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-//  WiFi.setAutoReconnect(true);
-//  WiFi.persistent(true);
   Serial.println("SSID: "+ssid+"Pass: "+password);
 
   Firebase.begin(FIREBASE_HOST, FIREBASE_SECRET);
@@ -265,7 +292,7 @@ void setup(){
   Serial.print(totalLitres);
   Serial.println("L");
 
-  delay(7000); // Pause for 2 seconds
+  delay(7000);
 
   display.clear();
   displaychar("Smart Water Meter", 20,0,1);
@@ -297,6 +324,7 @@ void loop() {
   else {
     if(!creFirstTime) {
       creFirstTime = true;
+      digitalWrite(VALVE, LOW); //HIGH
       WiFi.mode(WIFI_STA);
       String ssid = readData(r[0]), password = readData(r[1]);
       WiFi.begin(ssid, password);
@@ -350,26 +378,7 @@ void loop() {
       Serial.println("10 minute");
       String data_Litre = readData(r[2]);
       String deviceId = mac_address();
-      WiFiClient client;
-      HTTPClient http;
-      Serial.print("[HTTP] begin...\n");
-      http.begin(client, SERVER_IP); //HTTP
-      http.addHeader("Content-Type", "application/json");
-      Serial.print("[HTTP] POST...\n");
-      int httpCode = http.POST("{\"deviceId\":\"" + deviceId + "\",\"litre\":\"" + data_Litre + "\"}");
-      // httpCode will be negative on error
-      if (httpCode > 0) {
-        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-        if (httpCode == HTTP_CODE_OK) {
-          const String& payload = http.getString();
-          Serial.println("received payload:\n<<");
-          Serial.println(payload);
-          Serial.println(">>");
-        }
-      } else {
-        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
-      }
-      http.end();
+      postData(POST_LITRE_URL, "{\"deviceId\":\"" + deviceId + "\",\"litre\":\"" + data_Litre + "\"}");
       previousMillis2 = millis();
     }
   
