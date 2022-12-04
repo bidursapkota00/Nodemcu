@@ -17,8 +17,8 @@ ESP8266WebServer server(80);
 #define CRE  10
 #define VALVE  13
 
-#define POST_LITRE_URL "http://smart-water-meter-system.vercel.app/api/addlitre"
-#define POST_STREAM_NOTHING_URL "http://smart-water-meter-system.vercel.app/api/stream/nothing"
+#define POST_LITRE_URL "https://smart-water-meter-system.vercel.app/api/addlitre"
+#define POST_STREAM_NOTHING_URL "https://smart-water-meter-system.vercel.app/api/stream/nothing"
 #define FIREBASE_HOST "smart-water-meter-v1-default-rtdb.firebaseio.com" //Without http:// or https:// schemes
 #define FIREBASE_SECRET "62pyh8BmfqlXYRTCBopoxtGkFxxYUqHGcTtGbSJk"
 
@@ -199,7 +199,10 @@ void setCredentials(){
 }
 
 void postData(String apiurl, String jsondata) {
-  WiFiClient client;
+  Serial.println(apiurl);
+  Serial.println(jsondata);
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
   Serial.print("[HTTP] begin...\n");
   http.begin(client, apiurl); //HTTP
@@ -293,6 +296,7 @@ void setup(){
   Serial.println("L");
 
   delay(7000);
+  Serial.println(mac_address());
 
   display.clear();
   displaychar("Smart Water Meter", 20,0,1);
