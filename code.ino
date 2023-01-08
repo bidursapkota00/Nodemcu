@@ -13,6 +13,7 @@
 ESP8266WebServer server(80);
 
 #define SENSOR  14
+#define DETECTOR  16
 #define RST  9
 #define CRE  10
 #define VALVE  13
@@ -59,7 +60,9 @@ float totalLitres = 0;
 
 
 void IRAM_ATTR pulseCounter(){
-  pulseCount++;
+  if(!digitalRead(DETECTOR)) {
+    pulseCount++;
+  }
 }
 
 void IRAM_ATTR rstLitre(){
@@ -278,7 +281,8 @@ void setup(){
   pinMode(CRE, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(CRE), creHotspot, FALLING);
   pinMode(VALVE, OUTPUT);
-  digitalWrite(VALVE, LOW);
+  digitalWrite(VALVE, HIGH);
+  pinMode (DETECTOR, INPUT);
 
   String ssid = readData(r[0]), password = readData(r[1]);
 
@@ -328,7 +332,15 @@ void loop() {
   else {
     if(!creFirstTime) {
       creFirstTime = true;
-      digitalWrite(VALVE, LOW); //HIGH
+      String litr = readData(r[2]);
+      if(litr.toFloat() >= 1000) {
+        digitalWrite(VALVE, LOW);
+        display.clear();
+        displaychar("PAYMENT", 10,10,3);
+        displaychar("REQUIRED", 10,70,3);
+
+      }
+      digitalWrite(VALVE, HIGH);
       WiFi.mode(WIFI_STA);
       String ssid = readData(r[0]), password = readData(r[1]);
       WiFi.begin(ssid, password);
@@ -387,7 +399,6 @@ void loop() {
     }
   
   //////////////////////////////////////////////////////////////////////////////////////////
-  
     currentMillis = millis();
     if (currentMillis - previousMillis > interval){
       pulse1Sec = pulseCount;
