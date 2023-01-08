@@ -333,7 +333,7 @@ void loop() {
     if(!creFirstTime) {
       creFirstTime = true;
       String litr = readData(r[2]);
-      if(litr.toFloat() >= 1000) {
+      if(litr.toFloat() >= 100000) {
         digitalWrite(VALVE, LOW);
         display.clear();
         displaychar("PAYMENT", 10,10,3);
