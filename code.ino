@@ -12,7 +12,7 @@
 
 ESP8266WebServer server(80);
 
-#define SENSOR  14
+#define SENSOR  12
 #define DETECTOR  16
 #define RST  9
 #define CRE  10
@@ -191,6 +191,7 @@ String readData(byte i) {
 }
 
 void setCredentials(){
+  Serial.println("Changing Credential....");
   String data = server.arg("plain");
   StaticJsonBuffer<200> jBuffer;
   JsonObject& jObject = jBuffer.parseObject(data);
@@ -199,6 +200,7 @@ void setCredentials(){
   eeprom_write_page(DEVADDR, w[0], dataS(access_point), 32);
   eeprom_write_page(DEVADDR, w[1], dataS(pass), 32);
   server.send(200,"Credential Changed");
+  Serial.println("Credential Changed");
 }
 
 void postData(String apiurl, String jsondata) {
@@ -316,6 +318,9 @@ void loop() {
     delay(500);
     if(creFirstTime) {
       digitalWrite(VALVE, LOW);
+      clearLitre();
+      displaychar("Hotspot", 10,10,2);
+      displaychar("Created", 10,30,2);
       Serial.println("Cre First Time");
       WiFi.mode(WIFI_AP);
       WiFi.softAP(hotspot_ssid, hotspot_password);         //starting AccessPoint on given credential
@@ -332,15 +337,20 @@ void loop() {
   else {
     if(!creFirstTime) {
       creFirstTime = true;
+      digitalWrite(VALVE, HIGH);
       String litr = readData(r[2]);
+      clearLitre();
+      displaychar("Smart Water Meter", 20,0,1);
+      displaychar("V: "+litr+" L", 0,10,2);
+      displaychar("U: "+String(litr.toFloat()/1000,4), 0,30,2);
+      displayTestWifi();
       if(litr.toFloat() >= 100000) {
         digitalWrite(VALVE, LOW);
-        display.clear();
-        displaychar("PAYMENT", 10,10,3);
-        displaychar("REQUIRED", 10,70,3);
+        clearLitre();
+        displaychar("PAYMENT", 10,10,2);
+        displaychar("REQUIRED", 10,30,2);
 
       }
-      digitalWrite(VALVE, HIGH);
       WiFi.mode(WIFI_STA);
       String ssid = readData(r[0]), password = readData(r[1]);
       WiFi.begin(ssid, password);
@@ -377,7 +387,6 @@ void loop() {
       eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
       eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
       clearLitre();
-      //displaychar("Smart Water Meter", 20,0,1);
       String data_Litre = readData(r[2]);
       displaychar("V: "+data_Litre+" L", 0,10,2);
       displaychar("U: "+String(data_Litre.toFloat()/1000,4), 0,30,2);
@@ -399,6 +408,7 @@ void loop() {
     }
   
   //////////////////////////////////////////////////////////////////////////////////////////
+  
     currentMillis = millis();
     if (currentMillis - previousMillis > interval){
       pulse1Sec = pulseCount;
