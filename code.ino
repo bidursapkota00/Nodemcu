@@ -49,7 +49,7 @@ long previousMillis = 0;
 int interval2 = 10*60*1000;
 long currentMillis2 = 0;
 long previousMillis2 = millis() - interval2 + 60000;
-float calibrationFactor = 8.50;
+float calibrationFactor = 7.95;
 volatile byte pulseCount = 0;
 byte pulse1Sec = 0;
 float flowRate = 0.0;
@@ -313,6 +313,8 @@ void setup(){
 }
 
 void loop() {
+//  Serial.print("Initial:    ");
+//  Serial.println(millis());
   if(creVar) {
     Serial.println("Cre clicked");
     delay(500);
@@ -383,8 +385,8 @@ void loop() {
       }
     }
     if (rstVar){
-      eeprom_write_page(DEVADDR, w[0], dataS(_SSID), 32);
-      eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
+      //eeprom_write_page(DEVADDR, w[0], dataS(_SSID), 32);
+      //eeprom_write_page(DEVADDR, w[1], dataS(_pass), 32);
       eeprom_write_page(DEVADDR, w[2], dataS("0.00"), 32);
       clearLitre();
       String data_Litre = readData(r[2]);
@@ -416,16 +418,20 @@ void loop() {
     
       flowRate = ((1000.0 / (millis() - previousMillis)) * pulse1Sec) ;
       if (flowRate < calibrationFactor * 0.6){
-        flowRate = flowRate / (calibrationFactor * .55);
+//        Serial.println("Low flowrate");
+        flowRate = flowRate / (calibrationFactor * .50);
       }
       else if (flowRate < calibrationFactor){
-        flowRate = flowRate / (calibrationFactor * .65);
+        flowRate = flowRate / (calibrationFactor * .83);
+//        Serial.println("Medium flowrate");
       }
       else if (flowRate < calibrationFactor * 2.2){
-        flowRate = flowRate / (calibrationFactor * .80);
+        flowRate = flowRate / (calibrationFactor * .90);
+//        Serial.println("High flowrate");
       }
       else{
         flowRate = flowRate / calibrationFactor;
+//        Serial.println("Default flowrate");
       }
       previousMillis = millis();
     
@@ -452,4 +458,6 @@ void loop() {
       }
     }
   }
+//  Serial.print("Final:    ");
+//  Serial.println(millis());
 }
