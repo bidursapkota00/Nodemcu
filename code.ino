@@ -214,7 +214,7 @@ void postData(String apiurl, String jsondata) {
   http.addHeader("Content-Type", "application/json");
   Serial.print("[HTTP] POST...\n");
   int httpCode = http.POST(jsondata);
-  // httpCode will be negative on error
+  // HTTPCode will be negative on error
   if (httpCode > 0) {
     Serial.printf("[HTTP] POST... code: %d\n", httpCode);
     if (httpCode == HTTP_CODE_OK) {
